@@ -1,17 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-
-import 'catatan.dart';
-import 'db_helper.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  databaseFactory = databaseFactoryFfiWeb;
-
   runApp(const MyApp());
 }
+
+// ===============================
+// MODEL DATA CATATAN
+// ===============================
+class Catatan {
+  final String judul;
+  final String isi;
+  final String kategori;
+  final String emailPengirim; // [FITUR 3] Tambahan properti email
+  final DateTime dibuatPada;
+
+  Catatan({
+    required this.judul,
+    required this.isi,
+    required this.kategori,
+    required this.emailPengirim,
+    required this.dibuatPada,
+  });
+}
+
 // ===============================
 // ROOT APP
 // ===============================
@@ -27,33 +38,7 @@ class MyApp extends StatelessWidget {
         colorSchemeSeed: Colors.indigo,
         useMaterial3: true,
       ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const HomePage(),
-      },
-      onGenerateRoute: (settings) {
-        switch (settings.name) {
-          case '/tambah':
-            final catatanAwal = settings.arguments as Catatan?;
-
-            return MaterialPageRoute(
-              builder: (_) => TambahCatatanPage(
-                catatanAwal: catatanAwal,
-              ),
-            );
-
-          case '/detail':
-            final catatan = settings.arguments as Catatan;
-
-            return MaterialPageRoute(
-              builder: (_) => DetailCatatanPage(
-                catatan: catatan,
-              ),
-            );
-        }
-
-        return null;
-      },
+      home: const HomePage(), // Menggunakan home langsung agar mempermudah passing data dinamis
     );
   }
 }
@@ -69,108 +54,70 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<List<Catatan>> _futureCatatan;
+  String _kategoriFilter = 'Semua'; // [FITUR 2] State untuk filter kategori
 
-  String _filterKategori = 'Semua';
-
-  final List<String> _kategoriFilter = const [
-    'Semua',
-    'Kuliah',
-    'Tugas',
-    'Pribadi',
-    'Lainnya',
+  final List<Catatan> _catatan = [
+    Catatan(
+      judul: 'Belajar Flutter',
+      isi: 'Mempelajari Stateful Widget, Form, dan Navigation.',
+      kategori: 'Kuliah',
+      emailPengirim: 'mahasiswa@kampus.ac.id',
+      dibuatPada: DateTime.now(),
+    ),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _futureCatatan = DbHelper.instance.getAll();
-  }
-
-  void _muatUlang() {
-    setState(() {
-      _futureCatatan = DbHelper.instance.getAll();
-    });
-  }
-
+  // Fungsi untuk menambah catatan baru
   Future<void> _bukaTambahCatatan() async {
-    final hasil = await Navigator.pushNamed(context, '/tambah');
-
-    if (!mounted) return;
-
-    _muatUlang();
-
-    if (hasil == 'tambah') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Catatan berhasil ditambahkan'),
-        ),
-      );
-    }
-  }
-
-  Future<void> _bukaDetailCatatan(Catatan catatan) async {
-    final hasil = await Navigator.pushNamed(
+    final hasil = await Navigator.push(
       context,
-      '/detail',
-      arguments: catatan,
+      MaterialPageRoute(builder: (_) => const TambahCatatanPage()),
     );
 
-    if (!mounted) return;
+    if (hasil is Catatan) {
+      setState(() {
+        _catatan.add(hasil);
+      });
 
-    if (hasil == 'edit') {
-      _muatUlang();
-
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Catatan berhasil diedit'),
-        ),
+        SnackBar(content: Text('Catatan "${hasil.judul}" ditambahkan')),
       );
     }
   }
 
-  Future<void> _konfirmasiHapus(Catatan catatan) async {
-    final yakin = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Hapus catatan?'),
-          content: Text(
-            'Catatan "${catatan.judul}" akan dihapus permanen.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx, false);
-              },
-              child: const Text('Batal'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              onPressed: () {
-                Navigator.pop(ctx, true);
-              },
-              child: const Text('Hapus'),
-            ),
-          ],
-        );
-      },
+  // [FITUR 1] Fungsi untuk membuka detail dan menerima hasil edit
+  Future<void> _bukaDetailCatatan(int index) async {
+    final hasilEdit = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetailCatatanPage(catatan: _catatan[index]),
+      ),
     );
 
-    if (yakin != true) return;
+    // Jika kembaliannya berupa Catatan baru, berarti data diedit
+    if (hasilEdit is Catatan) {
+      setState(() {
+        _catatan[index] = hasilEdit;
+      });
 
-    await DbHelper.instance.delete(catatan.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Catatan "${hasilEdit.judul}" diperbarui')),
+      );
+    }
+  }
 
-    if (!mounted) return;
+  void _hapusCatatan(int index) {
+    // Cari index asli jika sedang dalam mode filter
+    final catatanDihapus = _catatanTampil[index];
+    final originalIndex = _catatan.indexOf(catatanDihapus);
 
-    _muatUlang();
+    setState(() {
+      _catatan.removeAt(originalIndex);
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Catatan "${catatan.judul}" dihapus'),
-      ),
+      SnackBar(content: Text('Catatan "${catatanDihapus.judul}" dihapus')),
     );
   }
 
@@ -178,18 +125,13 @@ class _HomePageState extends State<HomePage> {
     final hari = tanggal.day.toString().padLeft(2, '0');
     final bulan = tanggal.month.toString().padLeft(2, '0');
     final tahun = tanggal.year.toString();
-
     return '$hari/$bulan/$tahun';
   }
 
-  List<Catatan> _filterData(List<Catatan> data) {
-    if (_filterKategori == 'Semua') {
-      return data;
-    }
-
-    return data.where((catatan) {
-      return catatan.kategori == _filterKategori;
-    }).toList();
+  // [FITUR 2] Getter untuk list yang sudah difilter
+  List<Catatan> get _catatanTampil {
+    if (_kategoriFilter == 'Semua') return _catatan;
+    return _catatan.where((c) => c.kategori == _kategoriFilter).toList();
   }
 
   @override
@@ -198,93 +140,54 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Catatan Mahasiswa'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _muatUlang,
-          ),
+          // [FITUR 2] Dropdown untuk Filter Kategori
           Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: DropdownButton<String>(
-              value: _filterKategori,
-              underline: const SizedBox(),
-              items: _kategoriFilter.map((kategori) {
-                return DropdownMenuItem(
-                  value: kategori,
-                  child: Text(kategori),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _filterKategori = value!;
-                });
-              },
+            padding: const EdgeInsets.only(right: 16.0),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _kategoriFilter,
+                icon: const Icon(Icons.filter_list, color: Colors.indigo),
+                items: const ['Semua', 'Kuliah', 'Tugas', 'Pribadi', 'Lainnya']
+                    .map((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                onChanged: (newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _kategoriFilter = newValue;
+                    });
+                  }
+                },
+              ),
             ),
           ),
         ],
       ),
-      body: FutureBuilder<List<Catatan>>(
-        future: _futureCatatan,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
+      body: _catatanTampil.isEmpty
+          ? const _EmptyState()
+          : ListView.builder(
+        itemCount: _catatanTampil.length,
+        itemBuilder: (context, index) {
+          final c = _catatanTampil[index];
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  'Terjadi error:\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: ListTile(
+              leading: CircleAvatar(child: Text('${index + 1}')),
+              title: Text(
+                c.judul,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-            );
-          }
-
-          final semuaCatatan = snapshot.data ?? [];
-          final catatanTampil = _filterData(semuaCatatan);
-
-          if (catatanTampil.isEmpty) {
-            return _EmptyState(filterKategori: _filterKategori);
-          }
-
-          return ListView.builder(
-            itemCount: catatanTampil.length,
-            itemBuilder: (context, index) {
-              final c = catatanTampil[index];
-
-              return Card(
-                margin: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text('${index + 1}'),
-                  ),
-                  title: Text(
-                    c.judul,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${c.kategori} • ${c.emailPengirim} • ${_formatTanggal(c.dibuatPada)}',
-                  ),
-                  onTap: () {
-                    _bukaDetailCatatan(c);
-                  },
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete),
-                    onPressed: () {
-                      _konfirmasiHapus(c);
-                    },
-                  ),
-                ),
-              );
-            },
+              subtitle: Text('${c.kategori} • ${_formatTanggal(c.dibuatPada)}'),
+              onTap: () => _bukaDetailCatatan(index),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: () => _hapusCatatan(index),
+              ),
+            ),
           );
         },
       ),
@@ -300,39 +203,22 @@ class _HomePageState extends State<HomePage> {
 // EMPTY STATE
 // ===============================
 class _EmptyState extends StatelessWidget {
-  final String filterKategori;
-
-  const _EmptyState({
-    required this.filterKategori,
-  });
+  const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
-    final pesan = filterKategori == 'Semua'
-        ? 'Belum ada catatan'
-        : 'Belum ada catatan kategori $filterKategori';
-
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.note_alt_outlined,
-            size: 80,
-            color: Colors.grey,
-          ),
-          const SizedBox(height: 16),
+          Icon(Icons.note_alt_outlined, size: 80, color: Colors.grey),
+          SizedBox(height: 16),
           Text(
-            pesan,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            'Belum ada catatan',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Tekan tombol + untuk menambah catatan.',
-          ),
+          SizedBox(height: 8),
+          Text('Tekan tombol + untuk menambah catatan.'),
         ],
       ),
     );
@@ -343,12 +229,10 @@ class _EmptyState extends StatelessWidget {
 // TAMBAH / EDIT CATATAN PAGE
 // ===============================
 class TambahCatatanPage extends StatefulWidget {
-  final Catatan? catatanAwal;
+  // [FITUR 1] Parameter opsional untuk menampung data lama saat Edit
+  final Catatan? catatanLama;
 
-  const TambahCatatanPage({
-    super.key,
-    this.catatanAwal,
-  });
+  const TambahCatatanPage({super.key, this.catatanLama});
 
   @override
   State<TambahCatatanPage> createState() => _TambahCatatanPageState();
@@ -357,35 +241,22 @@ class TambahCatatanPage extends StatefulWidget {
 class _TambahCatatanPageState extends State<TambahCatatanPage> {
   final _formKey = GlobalKey<FormState>();
 
-  final _judulCtrl = TextEditingController();
-  final _isiCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
+  late TextEditingController _judulCtrl;
+  late TextEditingController _isiCtrl;
+  late TextEditingController _emailCtrl; // [FITUR 3] Controller untuk email
+  late String _kategori;
 
-  String _kategori = 'Kuliah';
-
-  final _kategoriOpsi = const [
-    'Kuliah',
-    'Tugas',
-    'Pribadi',
-    'Lainnya',
-  ];
-
-  bool _menyimpan = false;
-
-  bool get _modeEdit => widget.catatanAwal != null;
+  final _kategoriOpsi = const ['Kuliah', 'Tugas', 'Pribadi', 'Lainnya'];
 
   @override
   void initState() {
     super.initState();
-
-    if (_modeEdit) {
-      final catatan = widget.catatanAwal!;
-
-      _judulCtrl.text = catatan.judul;
-      _isiCtrl.text = catatan.isi;
-      _emailCtrl.text = catatan.emailPengirim;
-      _kategori = catatan.kategori;
-    }
+    // [FITUR 1] Mengisi form dengan data lama jika sedang mode Edit
+    final lama = widget.catatanLama;
+    _judulCtrl = TextEditingController(text: lama?.judul ?? '');
+    _isiCtrl = TextEditingController(text: lama?.isi ?? '');
+    _emailCtrl = TextEditingController(text: lama?.emailPengirim ?? '');
+    _kategori = lama?.kategori ?? 'Kuliah';
   }
 
   @override
@@ -396,66 +267,28 @@ class _TambahCatatanPageState extends State<TambahCatatanPage> {
     super.dispose();
   }
 
-  bool _emailValid(String email) {
-    final regex = RegExp(
-      r'^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$',
-    );
-
-    return regex.hasMatch(email);
-  }
-
-  Future<void> _simpan() async {
+  void _simpan() {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _menyimpan = true;
-    });
+    final catatanBaru = Catatan(
+      judul: _judulCtrl.text.trim(),
+      isi: _isiCtrl.text.trim(),
+      kategori: _kategori,
+      emailPengirim: _emailCtrl.text.trim(),
+      // Jika edit, pertahankan tanggal lama. Jika baru, buat tanggal sekarang.
+      dibuatPada: widget.catatanLama?.dibuatPada ?? DateTime.now(),
+    );
 
-    try {
-      if (_modeEdit) {
-        final catatanEdit = widget.catatanAwal!.copyWith(
-          judul: _judulCtrl.text.trim(),
-          isi: _isiCtrl.text.trim(),
-          kategori: _kategori,
-          emailPengirim: _emailCtrl.text.trim(),
-        );
-
-        await DbHelper.instance.update(catatanEdit);
-      } else {
-        final catatanBaru = Catatan(
-          judul: _judulCtrl.text.trim(),
-          isi: _isiCtrl.text.trim(),
-          kategori: _kategori,
-          emailPengirim: _emailCtrl.text.trim(),
-          dibuatPada: DateTime.now(),
-        );
-
-        await DbHelper.instance.insert(catatanBaru);
-      }
-
-      if (!mounted) return;
-
-      Navigator.pop(context, _modeEdit ? 'edit' : 'tambah');
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _menyimpan = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menyimpan: $e'),
-        ),
-      );
-    }
+    Navigator.pop(context, catatanBaru);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEdit = widget.catatanLama != null;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_modeEdit ? 'Edit Catatan' : 'Tambah Catatan'),
+        title: Text(isEdit ? 'Edit Catatan' : 'Tambah Catatan'),
       ),
       body: Form(
         key: _formKey,
@@ -470,35 +303,8 @@ class _TambahCatatanPageState extends State<TambahCatatanPage> {
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Judul wajib diisi';
-                }
-
-                if (value.trim().length < 3) {
-                  return 'Minimal 3 karakter';
-                }
-
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email Pengirim',
-                prefixIcon: Icon(Icons.email),
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Email wajib diisi';
-                }
-
-                if (!_emailValid(value.trim())) {
-                  return 'Format email tidak valid';
-                }
-
+                if (value == null || value.trim().isEmpty) return 'Judul wajib diisi';
+                if (value.trim().length < 3) return 'Minimal 3 karakter';
                 return null;
               },
             ),
@@ -511,15 +317,30 @@ class _TambahCatatanPageState extends State<TambahCatatanPage> {
                 border: OutlineInputBorder(),
               ),
               items: _kategoriOpsi.map((kategori) {
-                return DropdownMenuItem(
-                  value: kategori,
-                  child: Text(kategori),
-                );
+                return DropdownMenuItem(value: kategori, child: Text(kategori));
               }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _kategori = value!;
-                });
+              onChanged: (value) => setState(() => _kategori = value!),
+            ),
+            const SizedBox(height: 16),
+            // [FITUR 3] Field Email dengan Validasi Regex
+            TextFormField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email Pengirim',
+                prefixIcon: Icon(Icons.email),
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Email wajib diisi';
+                }
+                // Regex format email standar
+                final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                if (!emailRegex.hasMatch(value.trim())) {
+                  return 'Format email tidak valid (contoh: nama@email.com)';
+                }
+                return null;
               },
             ),
             const SizedBox(height: 16),
@@ -532,32 +353,15 @@ class _TambahCatatanPageState extends State<TambahCatatanPage> {
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Isi wajib diisi';
-                }
-
+                if (value == null || value.trim().isEmpty) return 'Isi wajib diisi';
                 return null;
               },
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _menyimpan ? null : _simpan,
-              icon: _menyimpan
-                  ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              )
-                  : const Icon(Icons.save),
-              label: Text(
-                _menyimpan
-                    ? 'Menyimpan...'
-                    : _modeEdit
-                    ? 'Simpan Perubahan'
-                    : 'Simpan',
-              ),
+              onPressed: _simpan,
+              icon: const Icon(Icons.save),
+              label: const Text('Simpan'),
             ),
           ],
         ),
@@ -581,22 +385,7 @@ class DetailCatatanPage extends StatelessWidget {
     final hari = tanggal.day.toString().padLeft(2, '0');
     final bulan = tanggal.month.toString().padLeft(2, '0');
     final tahun = tanggal.year.toString();
-
     return '$hari/$bulan/$tahun';
-  }
-
-  Future<void> _editCatatan(BuildContext context) async {
-    final hasil = await Navigator.pushNamed(
-      context,
-      '/tambah',
-      arguments: catatan,
-    );
-
-    if (hasil == 'edit') {
-      if (!context.mounted) return;
-
-      Navigator.pop(context, 'edit');
-    }
   }
 
   @override
@@ -605,11 +394,24 @@ class DetailCatatanPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Detail Catatan'),
         actions: [
+          // [FITUR 1] Tombol Edit di halaman Detail
           IconButton(
-            onPressed: () {
-              _editCatatan(context);
-            },
             icon: const Icon(Icons.edit),
+            tooltip: 'Edit Catatan',
+            onPressed: () async {
+              // Buka halaman tambah tapi bawa data catatan lama
+              final hasilEdit = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TambahCatatanPage(catatanLama: catatan),
+                ),
+              );
+
+              // Jika ada hasil (berhasil disave), kembalikan ke HomePage
+              if (hasilEdit != null) {
+                Navigator.pop(context, hasilEdit);
+              }
+            },
           ),
         ],
       ),
@@ -620,17 +422,12 @@ class DetailCatatanPage extends StatelessWidget {
           children: [
             Text(
               catatan.judul,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                Chip(
-                  label: Text(catatan.kategori),
-                ),
+                Chip(label: Text(catatan.kategori)),
                 const SizedBox(width: 8),
                 Text(
                   _formatTanggal(catatan.dibuatPada),
@@ -638,26 +435,22 @@ class DetailCatatanPage extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            // Menampilkan email pengirim
             Row(
               children: [
-                const Icon(Icons.email, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    catatan.emailPengirim,
-                    style: const TextStyle(fontSize: 15),
-                  ),
+                const Icon(Icons.email_outlined, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  catatan.emailPengirim,
+                  style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
                 ),
               ],
             ),
             const Divider(height: 32),
             Text(
               catatan.isi,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.5,
-              ),
+              style: const TextStyle(fontSize: 16, height: 1.5),
             ),
             const SizedBox(height: 32),
             SizedBox(
@@ -668,17 +461,6 @@ class DetailCatatanPage extends StatelessWidget {
                 },
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('Kembali ke Daftar'),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  _editCatatan(context);
-                },
-                icon: const Icon(Icons.edit),
-                label: const Text('Edit Catatan'),
               ),
             ),
           ],
