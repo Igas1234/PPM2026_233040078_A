@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-
 import 'catatan.dart';
-import 'db_helper.dart';
+import 'api_client.dart'; // <-- Pastikan import file api_client.dart
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  databaseFactory = databaseFactoryFfiWeb;
-
+  // sqflite dan databaseFactory dihapus karena kita sudah pakai API
   runApp(const MyApp());
 }
+
 // ===============================
 // ROOT APP
 // ===============================
@@ -84,12 +79,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _futureCatatan = DbHelper.instance.getAll();
+    // Ubah DbHelper menjadi ApiClient
+    _futureCatatan = ApiClient.instance.getAll();
   }
 
   void _muatUlang() {
     setState(() {
-      _futureCatatan = DbHelper.instance.getAll();
+      _futureCatatan = ApiClient.instance.getAll();
     });
   }
 
@@ -136,7 +132,7 @@ class _HomePageState extends State<HomePage> {
         return AlertDialog(
           title: const Text('Hapus catatan?'),
           content: Text(
-            'Catatan "${catatan.judul}" akan dihapus permanen.',
+            'Catatan "${catatan.judul}" akan dihapus permanen dari server.',
           ),
           actions: [
             TextButton(
@@ -161,17 +157,33 @@ class _HomePageState extends State<HomePage> {
 
     if (yakin != true) return;
 
-    await DbHelper.instance.delete(catatan.id!);
+    // Proses hapus lewat API dengan try-catch
+    try {
+      await ApiClient.instance.delete(catatan.id!);
 
-    if (!mounted) return;
+      if (!mounted) return;
+      _muatUlang();
 
-    _muatUlang();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Catatan "${catatan.judul}" dihapus'),
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Catatan "${catatan.judul}" dihapus'),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menghapus: ${e.message}'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Terjadi kesalahan: $e'),
+        ),
+      );
+    }
   }
 
   String _formatTanggal(DateTime tanggal) {
@@ -232,13 +244,18 @@ class _HomePageState extends State<HomePage> {
           }
 
           if (snapshot.hasError) {
+            final e = snapshot.error;
+            final pesan = e is ApiException ? e.message : 'Terjadi kesalahan: $e';
             return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  'Terjadi error:\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48),
+                  const SizedBox(height: 8),
+                  Text(pesan, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _muatUlang, child: const Text('Coba lagi')),
+                ],
               ),
             );
           }
@@ -407,46 +424,48 @@ class _TambahCatatanPageState extends State<TambahCatatanPage> {
   Future<void> _simpan() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _menyimpan = true;
-    });
+    setState(() => _menyimpan = true);
 
     try {
       if (_modeEdit) {
-        final catatanEdit = widget.catatanAwal!.copyWith(
+        // Mode Edit: Gunakan copyWith dan update via ApiClient
+        final updated = widget.catatanAwal!.copyWith(
           judul: _judulCtrl.text.trim(),
           isi: _isiCtrl.text.trim(),
           kategori: _kategori,
           emailPengirim: _emailCtrl.text.trim(),
         );
+        await ApiClient.instance.update(updated);
 
-        await DbHelper.instance.update(catatanEdit);
+        if (!mounted) return;
+        Navigator.pop(context, 'edit'); // Lempar balikan 'edit' ke layar sebelumnya
+
       } else {
-        final catatanBaru = Catatan(
+        // Mode Tambah: Buat object baru dan insert via ApiClient
+        final baru = Catatan(
           judul: _judulCtrl.text.trim(),
           isi: _isiCtrl.text.trim(),
-          kategori: _kategori,
           emailPengirim: _emailCtrl.text.trim(),
+          kategori: _kategori,
           dibuatPada: DateTime.now(),
         );
+        await ApiClient.instance.insert(baru);
 
-        await DbHelper.instance.insert(catatanBaru);
+        if (!mounted) return;
+        Navigator.pop(context, 'tambah'); // Lempar balikan 'tambah' ke layar sebelumnya
       }
 
+    } on ApiException catch (e) {
       if (!mounted) return;
-
-      Navigator.pop(context, _modeEdit ? 'edit' : 'tambah');
+      setState(() => _menyimpan = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal menyimpan: ${e.message}')),
+      );
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _menyimpan = false;
-      });
-
+      setState(() => _menyimpan = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menyimpan: $e'),
-        ),
+        SnackBar(content: Text('Terjadi kesalahan: $e')),
       );
     }
   }

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pertemuan4"
+    namespace = "com.example.pertemuan7"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.pertemuan4"
+        applicationId = "com.example.pertemuan7"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
